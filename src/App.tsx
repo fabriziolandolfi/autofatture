@@ -15,6 +15,10 @@ import {
   CheckCircle,
   Info,
   FileCheck,
+  FileUp,
+  Loader2,
+  Sparkles,
+  Edit3,
 } from 'lucide-react';
 import { TipoDocumento, DettaglioLinea, DatiRiepilogo } from './types';
 import {
@@ -24,14 +28,165 @@ import {
   getDefaultRiferimentoNormativo,
   downloadXML,
 } from './utils/xmlGenerator';
+import { extractTextFromPDF, parseInvoiceData, ParsedInvoiceData } from './utils/pdfParser';
+
+// ==================== STEP 0: Caricamento PDF ====================
+function StepUploadPDF({
+  onPDFParsed,
+  onSkip,
+}: {
+  onPDFParsed: (data: ParsedInvoiceData) => void;
+  onSkip: () => void;
+}) {
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  const handleFile = async (file: File) => {
+    if (file.type !== 'application/pdf') {
+      setError('Per favore carica un file PDF');
+      return;
+    }
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      const text = await extractTextFromPDF(file);
+      const parsedData = parseInvoiceData(text);
+      onPDFParsed(parsedData);
+    } catch (err) {
+      console.error('Errore nel parsing del PDF:', err);
+      setError('Errore durante la lettura del PDF. Prova a inserimento manuale.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = () => {
+    setDragActive(false);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleFile(e.target.files[0]);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
+          <FileUp className="w-8 h-8 text-blue-600" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Carica la fattura estera</h2>
+        <p className="text-gray-600">Carica il PDF della fattura del fornitore estero per estrarre automaticamente i dati</p>
+      </div>
+
+      {/* Upload Area */}
+      <div
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${
+          dragActive
+            ? 'border-blue-500 bg-blue-50 scale-[1.02]'
+            : 'border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50/50'
+        }`}
+      >
+        {isProcessing ? (
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+            <p className="text-lg font-medium text-gray-700">Analisi del PDF in corso...</p>
+            <p className="text-sm text-gray-500">Estrazione dei dati dalla fattura</p>
+          </div>
+        ) : (
+          <>
+            <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-lg font-medium text-gray-700 mb-2">
+              Trascina qui il PDF della fattura
+            </p>
+            <p className="text-sm text-gray-500 mb-4">oppure</p>
+            <label className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 cursor-pointer transition-all font-medium shadow-lg shadow-blue-200">
+              <FileUp className="w-5 h-5" />
+              Seleziona file PDF
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={handleInputChange}
+                className="hidden"
+              />
+            </label>
+            <p className="text-xs text-gray-400 mt-4">Formati supportati: PDF</p>
+          </>
+        )}
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-red-800">{error}</div>
+        </div>
+      )}
+
+      {/* Divider */}
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-200"></div>
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="px-4 bg-white text-gray-500">oppure</span>
+        </div>
+      </div>
+
+      {/* Skip / Manual Entry */}
+      <div className="text-center">
+        <button
+          onClick={onSkip}
+          className="inline-flex items-center gap-2 px-6 py-3 bg-white border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-medium transition-all"
+        >
+          <Edit3 className="w-5 h-5" />
+          Procedi con inserimento manuale
+        </button>
+        <p className="text-sm text-gray-500 mt-3">
+          Se non hai il PDF o preferisci inserire i dati manualmente
+        </p>
+      </div>
+
+      {/* Info */}
+      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+        <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="text-sm text-amber-800">
+          <strong>Come funziona:</strong> L'app estrarrà automaticamente i dati dalla fattura (numero, data, fornitore, importi) e suggerirà il corretto tipo documento (TD17, TD18, TD19). Potrai sempre modificare i dati estratti prima di generare l'XML.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ==================== STEP 1: Scelta Tipo Documento ====================
 function StepTipoDocumento({
   selected,
   onSelect,
+  suggestion,
 }: {
   selected: TipoDocumento | null;
   onSelect: (tipo: TipoDocumento) => void;
+  suggestion?: { type?: TipoDocumento; reason?: string };
 }) {
   const options = [
     {
@@ -75,10 +230,22 @@ function StepTipoDocumento({
         <h2 className="text-2xl font-bold text-gray-800 mb-2">Che tipo di operazione hai effettuato?</h2>
         <p className="text-gray-600">Seleziona il tipo di documento in base alla natura dell'operazione</p>
       </div>
+
+      {/* Suggerimento dal PDF */}
+      {suggestion?.type && suggestion?.reason && (
+        <div className="p-4 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl flex items-start gap-3">
+          <Sparkles className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-indigo-800">
+            <strong>Suggerimento automatico:</strong> {suggestion.reason}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {options.map((option) => {
           const Icon = option.icon;
           const isSelected = selected === option.id;
+          const isSuggested = suggestion?.type === option.id;
           return (
             <button
               key={option.id}
@@ -92,6 +259,14 @@ function StepTipoDocumento({
               {isSelected && (
                 <div className="absolute top-3 right-3">
                   <CheckCircle className="w-6 h-6 text-green-500" />
+                </div>
+              )}
+              {isSuggested && !isSelected && (
+                <div className="absolute top-3 right-3">
+                  <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    Suggerito
+                  </span>
                 </div>
               )}
               <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${option.color} flex items-center justify-center mb-4`}>
@@ -114,12 +289,6 @@ function StepTipoDocumento({
             </button>
           );
         })}
-      </div>
-      <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
-        <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-amber-800">
-          <strong>Suggerimento:</strong> Se hai un PDF della fattura estera, puoi caricarlo nel passaggio successivo per estrarre i dati automaticamente, oppure procedere con l'inserimento manuale.
-        </div>
       </div>
     </div>
   );
@@ -233,9 +402,11 @@ interface CedenteForm {
 function StepCedente({
   data,
   onChange,
+  parsedData,
 }: {
   data: CedenteForm;
   onChange: (data: CedenteForm) => void;
+  parsedData?: ParsedInvoiceData | null;
 }) {
   return (
     <div className="space-y-6">
@@ -243,6 +414,23 @@ function StepCedente({
         <h2 className="text-2xl font-bold text-gray-800 mb-2">Dati del Fornitore Estero</h2>
         <p className="text-gray-600">Inserisci i dati del cedente/prestatore (soggetto estero)</p>
       </div>
+
+      {/* Dati estratti dal PDF */}
+      {parsedData && (parsedData.fornitoreNome || parsedData.fornitorePaese) && (
+        <div className="p-4 bg-green-50 border border-green-200 rounded-xl">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-4 h-4 text-green-600" />
+            <span className="text-sm font-medium text-green-800">Dati estratti dal PDF</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm text-green-700">
+            {parsedData.fornitoreNome && <p><strong>Nome:</strong> {parsedData.fornitoreNome}</p>}
+            {parsedData.fornitorePaese && <p><strong>Paese:</strong> {parsedData.fornitorePaese}</p>}
+            {parsedData.fornitorePartitaIva && <p><strong>P.IVA:</strong> {parsedData.fornitorePartitaIva}</p>}
+            {parsedData.fornitoreCitta && <p><strong>Città:</strong> {parsedData.fornitoreCitta}</p>}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Paese del fornitore *</label>
@@ -504,6 +692,7 @@ function StepDatiFattura({
   onLineeChange,
   riepilogo,
   onRiepilogoChange,
+  parsedData,
 }: {
   tipoDocumento: TipoDocumento;
   datiGenerali: DatiGeneraliForm;
@@ -512,6 +701,7 @@ function StepDatiFattura({
   onLineeChange: (linee: DettaglioLinea[]) => void;
   riepilogo: DatiRiepilogo[];
   onRiepilogoChange: (riepilogo: DatiRiepilogo[]) => void;
+  parsedData?: ParsedInvoiceData | null;
 }) {
   const addLinea = () => {
     const newLinea: DettaglioLinea = {
@@ -530,7 +720,6 @@ function StepDatiFattura({
   const updateLinea = (index: number, field: keyof DettaglioLinea, value: string) => {
     const updated = [...linee];
     updated[index] = { ...updated[index], [field]: value };
-    // Auto-calculate prezzoTotale
     if (field === 'prezzoUnitario' || field === 'quantita') {
       const qty = parseFloat(field === 'quantita' ? value : updated[index].quantita || '1');
       const price = parseFloat(field === 'prezzoUnitario' ? value : updated[index].prezzoUnitario);
@@ -558,7 +747,6 @@ function StepDatiFattura({
   const updateRiepilogo = (index: number, field: keyof DatiRiepilogo, value: string) => {
     const updated = [...riepilogo];
     updated[index] = { ...updated[index], [field]: value };
-    // Auto-calculate imposta
     if (field === 'aliquotaIVA' || field === 'imponibile') {
       const aliquota = parseFloat(field === 'aliquotaIVA' ? value : updated[index].aliquotaIVA) / 100;
       const imponibile = parseFloat(field === 'imponibile' ? value : updated[index].imponibile);
@@ -575,8 +763,24 @@ function StepDatiFattura({
     <div className="space-y-8">
       <div className="text-center mb-8">
         <h2 className="text-2xl font-bold text-gray-800 mb-2">Dati della Fattura Estera</h2>
-        <p className="text-gray-600">Inserisci i riferimenti alla fattura originale del fornitore estero</p>
+        <p className="text-gray-600">Verifica e completa i dati estratti dalla fattura originale</p>
       </div>
+
+      {/* Dati estratti dal PDF */}
+      {parsedData && (parsedData.numeroFattura || parsedData.dataFattura || parsedData.totale) && (
+        <div className="p-4 bg-green-50 border border-green-200 rounded-xl">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-4 h-4 text-green-600" />
+            <span className="text-sm font-medium text-green-800">Dati estratti dal PDF (verifica e modifica se necessario)</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-green-700">
+            {parsedData.numeroFattura && <p><strong>N° Fattura:</strong> {parsedData.numeroFattura}</p>}
+            {parsedData.dataFattura && <p><strong>Data:</strong> {parsedData.dataFattura}</p>}
+            {parsedData.totale && <p><strong>Totale:</strong> {parsedData.totale} {parsedData.valuta}</p>}
+            {parsedData.valuta && <p><strong>Valuta:</strong> {parsedData.valuta}</p>}
+          </div>
+        </div>
+      )}
 
       {/* Dati generali documento */}
       <div className="bg-white border border-gray-200 rounded-xl p-6">
@@ -916,7 +1120,9 @@ function StepPreview({
 export default function App() {
   const [step, setStep] = useState(0);
   const [tipoDocumento, setTipoDocumento] = useState<TipoDocumento | null>(null);
-  const [datiTrasmissione, setDatiTrasmissione] = useState({
+  const [parsedData, setParsedData] = useState<ParsedInvoiceData | null>(null);
+  const [pdfUploaded, setPdfUploaded] = useState(false);
+  const [datiTrasmissione, setDatiTrasmissione] = useState<DatiTrasmissioneForm>({
     idPaese: 'IT',
     idCodice: '',
     progressivoInvio: '00001',
@@ -924,7 +1130,7 @@ export default function App() {
     codiceDestinatario: '0000000',
     pecDestinatario: '',
   });
-  const [cedentePrestatore, setCedentePrestatore] = useState({
+  const [cedentePrestatore, setCedentePrestatore] = useState<CedenteForm>({
     idPaese: '',
     idCodice: '',
     denominazione: '',
@@ -934,7 +1140,7 @@ export default function App() {
     provincia: 'EE',
     nazione: '',
   });
-  const [cessionarioCommittente, setCessionarioCommittente] = useState({
+  const [cessionarioCommittente, setCessionarioCommittente] = useState<CessionarioForm>({
     idPaese: 'IT',
     idCodice: '',
     codiceFiscale: '',
@@ -946,7 +1152,7 @@ export default function App() {
     nazione: 'IT',
     regimeFiscale: 'RF01',
   });
-  const [datiGeneraliDocumento, setDatiGeneraliDocumento] = useState({
+  const [datiGeneraliDocumento, setDatiGeneraliDocumento] = useState<DatiGeneraliForm>({
     divisa: 'EUR',
     data: new Date().toISOString().split('T')[0],
     numero: '',
@@ -958,6 +1164,7 @@ export default function App() {
   const [generatedXML, setGeneratedXML] = useState('');
 
   const steps = [
+    'Carica PDF',
     'Tipo Documento',
     'Dati Trasmissione',
     'Fornitore Estero',
@@ -965,6 +1172,77 @@ export default function App() {
     'Dati Fattura',
     'Anteprima XML',
   ];
+
+  const handlePDFParsed = (data: ParsedInvoiceData) => {
+    setParsedData(data);
+    setPdfUploaded(true);
+
+    // Precompila i campi con i dati estratti
+    if (data.fornitorePaese) {
+      setCedentePrestatore(prev => ({
+        ...prev,
+        idPaese: data.fornitorePaese || '',
+        nazione: data.fornitorePaese || '',
+      }));
+    }
+    if (data.fornitoreNome) {
+      setCedentePrestatore(prev => ({ ...prev, denominazione: data.fornitoreNome! }));
+    }
+    if (data.fornitorePartitaIva) {
+      setCedentePrestatore(prev => ({ ...prev, idCodice: data.fornitorePartitaIva! }));
+    }
+    if (data.fornitoreIndirizzo) {
+      setCedentePrestatore(prev => ({ ...prev, indirizzo: data.fornitoreIndirizzo! }));
+    }
+    if (data.fornitoreCitta) {
+      setCedentePrestatore(prev => ({ ...prev, comune: data.fornitoreCitta! }));
+    }
+    if (data.fornitoreCap) {
+      setCedentePrestatore(prev => ({ ...prev, cap: data.fornitoreCap! }));
+    }
+    if (data.numeroFattura) {
+      setDatiGeneraliDocumento(prev => ({ ...prev, numero: data.numeroFattura! }));
+    }
+    if (data.dataFattura) {
+      setDatiGeneraliDocumento(prev => ({ ...prev, data: data.dataFattura! }));
+    }
+    if (data.valuta) {
+      setDatiGeneraliDocumento(prev => ({ ...prev, divisa: data.valuta! }));
+    }
+    if (data.totale) {
+      setDatiGeneraliDocumento(prev => ({ ...prev, importoTotaleDocumento: data.totale! }));
+    }
+    if (data.descrizione) {
+      // Aggiungi una linea con la descrizione estratta
+      const linea: DettaglioLinea = {
+        numeroLinea: 1,
+        descrizione: data.descrizione,
+        quantita: '1',
+        prezzoUnitario: data.totale || '0',
+        aliquotaIVA: '0',
+        natura: 'N6',
+        prezzoTotale: data.totale || '0',
+      };
+      setDettaglioLinee([linea]);
+    }
+
+    // Se c'è un suggerimento per il tipo documento, pre-selezionalo
+    if (data.tipoDocumentoSuggerito) {
+      setTipoDocumento(data.tipoDocumentoSuggerito);
+      setDatiGeneraliDocumento(prev => ({
+        ...prev,
+        causale: getDefaultCausale(data.tipoDocumentoSuggerito!),
+      }));
+    }
+
+    // Vai al prossimo step
+    setStep(1);
+  };
+
+  const handleSkipUpload = () => {
+    setPdfUploaded(false);
+    setStep(1);
+  };
 
   const handleTipoDocumentoSelect = (tipo: TipoDocumento) => {
     setTipoDocumento(tipo);
@@ -998,7 +1276,7 @@ export default function App() {
   };
 
   const handleNext = () => {
-    if (step === 4) {
+    if (step === 5) {
       generateXMLAndPreview();
     }
     setStep((s) => Math.min(s + 1, steps.length - 1));
@@ -1017,11 +1295,12 @@ export default function App() {
 
   const canProceed = (): boolean => {
     switch (step) {
-      case 0: return tipoDocumento !== null;
-      case 1: return datiTrasmissione.idCodice !== '' && datiTrasmissione.progressivoInvio !== '';
-      case 2: return cedentePrestatore.denominazione !== '' && cedentePrestatore.idPaese !== '';
-      case 3: return cessionarioCommittente.denominazione !== '' && cessionarioCommittente.idCodice !== '';
-      case 4: return datiGeneraliDocumento.numero !== '' && (dettaglioLinee.length > 0 || datiRiepilogo.length > 0);
+      case 0: return true; // Upload PDF è opzionale
+      case 1: return tipoDocumento !== null;
+      case 2: return datiTrasmissione.idCodice !== '' && datiTrasmissione.progressivoInvio !== '';
+      case 3: return cedentePrestatore.denominazione !== '' && cedentePrestatore.idPaese !== '';
+      case 4: return cessionarioCommittente.denominazione !== '' && cessionarioCommittente.idCodice !== '';
+      case 5: return datiGeneraliDocumento.numero !== '' && (dettaglioLinee.length > 0 || datiRiepilogo.length > 0);
       default: return true;
     }
   };
@@ -1037,7 +1316,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-800">AutoFattura XML</h1>
-              <p className="text-xs text-gray-500">Generatore autofatture elettroniche SdI</p>
+              <p className="text-xs text-gray-500">Generatore autofatture elettroniche SdI da PDF</p>
             </div>
           </div>
           <div className="hidden md:flex items-center gap-2 text-sm text-gray-500">
@@ -1081,18 +1360,25 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-4 pb-8">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 md:p-8">
           {step === 0 && (
-            <StepTipoDocumento selected={tipoDocumento} onSelect={handleTipoDocumentoSelect} />
+            <StepUploadPDF onPDFParsed={handlePDFParsed} onSkip={handleSkipUpload} />
           )}
           {step === 1 && (
-            <StepDatiTrasmissione data={datiTrasmissione} onChange={setDatiTrasmissione} />
+            <StepTipoDocumento
+              selected={tipoDocumento}
+              onSelect={handleTipoDocumentoSelect}
+              suggestion={parsedData ? { type: parsedData.tipoDocumentoSuggerito, reason: parsedData.motivoSuggerimento } : undefined}
+            />
           )}
           {step === 2 && (
-            <StepCedente data={cedentePrestatore} onChange={setCedentePrestatore} />
+            <StepDatiTrasmissione data={datiTrasmissione} onChange={setDatiTrasmissione} />
           )}
           {step === 3 && (
-            <StepCessionario data={cessionarioCommittente} onChange={setCessionarioCommittente} />
+            <StepCedente data={cedentePrestatore} onChange={setCedentePrestatore} parsedData={parsedData} />
           )}
           {step === 4 && (
+            <StepCessionario data={cessionarioCommittente} onChange={setCessionarioCommittente} />
+          )}
+          {step === 5 && (
             <StepDatiFattura
               tipoDocumento={tipoDocumento!}
               datiGenerali={datiGeneraliDocumento}
@@ -1101,9 +1387,10 @@ export default function App() {
               onLineeChange={setDettaglioLinee}
               riepilogo={datiRiepilogo}
               onRiepilogoChange={setDatiRiepilogo}
+              parsedData={parsedData}
             />
           )}
-          {step === 5 && (
+          {step === 6 && (
             <StepPreview xml={generatedXML} tipoDocumento={tipoDocumento!} onDownload={handleDownload} />
           )}
         </div>
@@ -1133,7 +1420,7 @@ export default function App() {
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              {step === 4 ? (
+              {step === 5 ? (
                 <>
                   <Eye className="w-5 h-5" />
                   Genera XML
@@ -1152,17 +1439,17 @@ export default function App() {
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="p-4 bg-white rounded-xl border border-gray-200">
             <div className="flex items-center gap-2 mb-2">
+              <Upload className="w-4 h-4 text-blue-500" />
+              <h4 className="text-sm font-semibold text-gray-700">Carica PDF</h4>
+            </div>
+            <p className="text-xs text-gray-500">Carica la fattura estera in PDF: i dati verranno estratti automaticamente per velocizzare la compilazione.</p>
+          </div>
+          <div className="p-4 bg-white rounded-xl border border-gray-200">
+            <div className="flex items-center gap-2 mb-2">
               <AlertCircle className="w-4 h-4 text-amber-500" />
               <h4 className="text-sm font-semibold text-gray-700">Validazione</h4>
             </div>
             <p className="text-xs text-gray-500">Verifica sempre l'XML con il validatore ufficiale dell'Agenzia delle Entrate prima dell'invio.</p>
-          </div>
-          <div className="p-4 bg-white rounded-xl border border-gray-200">
-            <div className="flex items-center gap-2 mb-2">
-              <Upload className="w-4 h-4 text-blue-500" />
-              <h4 className="text-sm font-semibold text-gray-700">Importazione</h4>
-            </div>
-            <p className="text-xs text-gray-500">Il file XML generato è compatibile con i principali software di fatturazione elettronica.</p>
           </div>
           <div className="p-4 bg-white rounded-xl border border-gray-200">
             <div className="flex items-center gap-2 mb-2">
